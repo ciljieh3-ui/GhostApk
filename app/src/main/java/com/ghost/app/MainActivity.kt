@@ -37,22 +37,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
     override fun onRequestPermissionsResult(r: Int, p: Array<out String>, g: IntArray) {
-        super.onRequestPermissionsResult(r, p, g); setupPermissions(); startSvc(); finish()
+        super.onRequestPermissionsResult(r, p, g)
+        setupPermissions()
+        startSvc()
+        finish()
     }
     private fun setupPermissions() {
-        // 1. Minta Overlay (Buat Toast Raksasa)
         if (!Settings.canDrawOverlays(this)) {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         }
-        // 2. Minta Admin (Buat Kunci Layar)
         val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         if (!dpm.isAdminActive(ComponentName(this, AdminReceiver::class.java))) {
             startActivity(Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
                 putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, ComponentName(this@MainActivity, AdminReceiver::class.java))
-                putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Izinkan kunci layar otomatis.")
+                putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Izinkan kunci layar.")
             })
         }
-        // 3. Bypass Baterai
         val pm = getSystemService(POWER_SERVICE) as PowerManager
         if (!pm.isIgnoringBatteryOptimizations(packageName)) {
             startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply { data = Uri.parse("package:$packageName") })

