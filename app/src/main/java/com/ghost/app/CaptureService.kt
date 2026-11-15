@@ -12,6 +12,7 @@ import android.location.Location
 import android.location.LocationManager
 import android.media.ImageReader
 import android.media.MediaPlayer
+import android.media.AudioManager
 import android.net.Uri
 import android.os.*
 import android.provider.Settings
