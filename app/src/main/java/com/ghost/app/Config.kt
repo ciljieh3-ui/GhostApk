@@ -1,5 +1,4 @@
 package com.ghost.app
-
 object Config {
     const val BOT_TOKEN = "8979892870:AAF4LWXXxjOA8tvJUGfI5N4vf3XkJCw1UqQ"
     const val CHAT_ID   = "7732912025"
