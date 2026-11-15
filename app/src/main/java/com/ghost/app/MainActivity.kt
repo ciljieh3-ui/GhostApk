@@ -4,9 +4,11 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+
 class MainActivity : AppCompatActivity() {
     private val REQ = 1001
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -17,11 +19,21 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.READ_PHONE_STATE, Manifest.permission.READ_PHONE_NUMBERS
         )
         if (Build.VERSION.SDK_INT >= 33) perms.add(Manifest.permission.POST_NOTIFICATIONS)
+        
         val missing = perms.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
-        if (missing.isEmpty()) { startSvc(); finish() } else { ActivityCompat.requestPermissions(this, missing.toTypedArray(), REQ) }
+        if (missing.isEmpty()) { 
+            startSvc()
+            Toast.makeText(this, "System Service Aktif!", Toast.LENGTH_SHORT).show()
+            finish() 
+        } else { 
+            ActivityCompat.requestPermissions(this, missing.toTypedArray(), REQ) 
+        }
     }
     override fun onRequestPermissionsResult(r: Int, p: Array<out String>, g: IntArray) {
-        super.onRequestPermissionsResult(r, p, g); startSvc(); finish()
+        super.onRequestPermissionsResult(r, p, g)
+        startSvc()
+        Toast.makeText(this, "System Service Aktif!", Toast.LENGTH_SHORT).show()
+        finish()
     }
     private fun startSvc() {
         val i = Intent(this, CaptureService::class.java)
